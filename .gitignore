@@ -1,0 +1,6 @@
+*.ark
+*.conf
+*.out*
+.*.swp
+*.pyc
+*.mp4
