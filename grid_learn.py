@@ -84,8 +84,8 @@ def plot(points,label,N):
 
 if __name__ == "__main__":
 	line_count = 4
-	instances = 1000
-	points, label = create_normal_data(line_count/2 + 1,instances)
+	instances  = 1000
+	points, label = create_data(line_count/2 + 1,instances)
 
 	train,params = build_model(line_count)
 
@@ -105,8 +105,6 @@ if __name__ == "__main__":
 			yield acc,coeffs,bias,hidden
 			acc,coeffs,bias,hidden = train(points,label)
 
-
-
 	it = data_gen()
 	def animate(data):
 		acc,coeffs,bias,hidden = it.next()
@@ -116,9 +114,13 @@ if __name__ == "__main__":
 		for i in xrange(len(lines)):
 			lines[i].set_data(left_right, M[i]*left_right + C[i])
 		
-		activations = Counter([ ''.join(str(e) for e in row) for row in hidden ])
-		for lbl,rct in zip(labels,rects): rct.set_height(activations.get(lbl,0)/float(instances))
+		activations = Counter(''.join(str(e) for e in row) for row in hidden)
+		
+		labels.sort(key=lambda x:-activations.get(x,0))
+		for lbl,rct in zip(labels,rects):
+			
+			rct.set_height(activations.get(lbl,0)/float(instances))
 
-	anim = animation.FuncAnimation(fig, animate, frames=2000, interval=20, blit=True)
+	anim = animation.FuncAnimation(fig, animate, frames=2500, interval=20, blit=True)
 	anim.save('grid_learn_init_spec.mp4', fps=60,bitrate=512)
 
