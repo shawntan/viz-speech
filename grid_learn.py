@@ -6,7 +6,9 @@ from theano_toolkit import utils as U
 from theano_toolkit import updates
 from collections import Counter
 from matplotlib import animation
-from itertools import product 
+from itertools import product
+import matplotlib.cm as cm
+import seaborn as sns
 def build_model(hidden_size,predict_only=False):
 	X = T.dmatrix('X')
 	Y = T.ivector('Y')
@@ -32,15 +34,20 @@ def build_model(hidden_size,predict_only=False):
 			updates =  updates.adadelta(params,grad),
 			outputs = [accuracy,W_input_hidden,b_hidden,(hidden>0.5)]
 		)
+	predict = theano.function(
+			inputs  = [X],
+			outputs = predict[:,0]
+		)
 
-	return train,params
+	return train,predict,params
 
 def create_normal_data(line_count,point_count):
 	points = []
 	labels = []
 	for i in xrange(line_count):
 		for j in xrange(line_count):
-			points.append(0.1*np.random.randn(point_count/4,2) + np.array([i,j]) - 1.5)
+			points.append(0.1*np.random.randn(point_count/4,2) +\
+					np.array([i,j]) - 1.5)
 			if i%2 == j%2:
 				labels.append(np.zeros(point_count/4,dtype=bool))
 			else:
@@ -61,66 +68,93 @@ def create_data(line_count,point_count):
 
 def plot(points,label,N):
 	fig = plt.figure(figsize=(6,8))
-	left_right = np.array([-2.5,2.5])
+	bounds = [-2.5,2.5]
+	left_right = np.array(bounds)
+	intervals = np.arange(bounds[0],bounds[1]+0.1,0.1)
+
+	ctr_pts = np.meshgrid(intervals,intervals)
 	labels = [''.join(i) for i in product('01',repeat=N)]
+	lbl_colors = dict(zip(labels,sns.color_palette("husl", len(labels))))
+
+
 #	ax = plt.axes(xlim=(left_right[0],left_right[1]), ylim=(-2.5, 2.5))
 #	ax = plt.subplot(121)
 	ax1 = plt.subplot2grid((3, 2), (0, 0),rowspan=2,colspan=2)
 	ax2 = plt.subplot2grid((3, 2), (2, 0),colspan=2)
+
+
 	pos = np.arange(len(labels))
 	width = 5.0/len(labels)
 	rects = ax2.bar(pos,np.zeros(len(labels)),width)
 	ax2.set_xticks(pos + (width / 2))
 	ax2.set_xticklabels(labels,rotation='vertical')
+#	for i,c in zip(ax2.get_xticklabels(),lbl_colors): i.set_color(c)
+
 	
-	ax1.set_xlim((left_right[0],left_right[1]))
-	ax1.set_ylim((left_right[0],left_right[1]))
+	#im = ax1.imshow(np.ones(ctr_pts[0].shape), interpolation='bilinear', origin='lower',cmap=cm.gray,extent=(left_right[0],left_right[1])*2,animated=True)
+	Z = np.ones(ctr_pts[0].shape)
+	im = ax1.imshow(
+			Z,
+			interpolation='bilinear',
+			origin='lower',
+			animated=True,
+			cmap=cm.gray,
+			extent=(left_right[0],left_right[1])*2,
+			alpha=0.5,
+			vmin=0,vmax=1,
+		)
+	ax1.set_xlim(bounds)
+	ax1.set_ylim(bounds)
 	class1 = points[ label]
 	class2 = points[~label]
 	ax1.plot(class1[:,0],class1[:,1], 'ro')
 	ax1.plot(class2[:,0],class2[:,1], 'bo')
-	return fig,ax1,left_right,labels,rects
+	return fig,ax1,ax2,left_right,labels,lbl_colors,rects,ctr_pts,im,Z
 
 
 if __name__ == "__main__":
 	line_count = 4
 	instances  = 1000
-	points, label = create_data(line_count/2 + 1,instances)
-
-	train,params = build_model(line_count)
-
-	fig,ax,left_right,labels,rects = plot(points,label,line_count)
+	points, label = create_normal_data(line_count/2 + 1,instances)
+	train,predict,params = build_model(line_count)
+	fig,ax,ax_hist,left_right,labels,lbl_colors,rects,ctr_pts,im,Z = plot(points,label,line_count)
 	lines = [ax.plot([], [], lw=2)[0] for _ in xrange(line_count)]
 	acc_text = ax.text(0.02, 1.01, '', transform=ax.transAxes)
 	acc_text.set_text('')
 
 	def data_gen():
 		acc,coeffs,bias,hidden = train(points,label)
+		ctr_z = predict(np.dstack(ctr_pts).reshape(-1, 2))
 		while acc < 0.999:
 			print acc
-			yield acc,coeffs,bias,hidden
+			yield acc,coeffs,bias,hidden,ctr_z
 			acc,coeffs,bias,hidden = train(points,label)
+			ctr_z = predict(np.dstack(ctr_pts).reshape(-1, 2))
 		for _ in xrange(100):
 			print acc
-			yield acc,coeffs,bias,hidden
+			yield acc,coeffs,bias,hidden,ctr_z
 			acc,coeffs,bias,hidden = train(points,label)
+			ctr_z = predict(np.dstack(ctr_pts).reshape(-1, 2))
 
 	it = data_gen()
 	def animate(data):
-		acc,coeffs,bias,hidden = it.next()
+		acc,coeffs,bias,hidden,ctr_z = it.next()
 		acc_text.set_text("accuracy=%0.2f"%acc)
 		M = - coeffs[0]/coeffs[1]
 		C = - bias / coeffs[1]
 		for i in xrange(len(lines)):
 			lines[i].set_data(left_right, M[i]*left_right + C[i])
-		
+		#Z[:,:] = 
+		#im = ax.imshow(Z, interpolation='bilinear', origin='lower',cmap=cm.gray,extent=(left_right[0],left_right[1])*2)
+		im.set_data(ctr_z.reshape(ctr_pts[0].shape))
 		activations = Counter(''.join(str(e) for e in row) for row in hidden)
 		
 		labels.sort(key=lambda x:-activations.get(x,0))
+		for i in ax_hist.get_xticklabels(): i.set_color(lbl_colors[i.get_text()])
 		for lbl,rct in zip(labels,rects):
-			
 			rct.set_height(activations.get(lbl,0)/float(instances))
 
-	anim = animation.FuncAnimation(fig, animate, frames=2500, interval=20, blit=True)
+
+	anim = animation.FuncAnimation(fig,animate,frames=2500, interval=20, blit=True)
 	anim.save('grid_learn_init_spec.mp4', fps=60,bitrate=512)
 
