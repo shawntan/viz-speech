@@ -9,21 +9,27 @@ from matplotlib import animation
 from itertools import product
 import matplotlib.cm as cm
 import seaborn as sns
+
+def adjacency_constraint(lin_activations):
+	size = lin_activations.shape[1]
+	constraint = T.eye(size)[:,1:] - T.eye(size+1)[1:,1:-1]
+	return T.mean(T.sum(abs(T.dot(lin_activations,constraint)),axis=1)) + T.mean(abs(lin_activations[:,0]-lin_activations[:,-1]))
+
 def build_model(hidden_size,predict_only=False):
-	X = T.dmatrix('X')
+	X = T.matrix('X')
 	Y = T.ivector('Y')
-			#* (0.001 * U.initial_weights(2,hidden_size) + np.array([[0,0,1,1],[1,1,0,0]])))
+		#* (0.001 * U.initial_weights(2,hidden_size) + np.array([[0,0,1,1],[1,1,0,0]])))
 	W_input_hidden   = U.create_shared(U.initial_weights(2,hidden_size))
 	b_hidden         = U.create_shared(U.initial_weights(hidden_size))
 	W_hidden_predict = U.create_shared(U.initial_weights(hidden_size,2))
 	b_predict        = U.create_shared(U.initial_weights(2))
 
 	params = [W_input_hidden,b_hidden,W_hidden_predict,b_predict]
-	
-	hidden = T.nnet.sigmoid(T.dot(X,W_input_hidden) + b_hidden)
+	hidden_lin = T.dot(X,W_input_hidden) + b_hidden
+	hidden = T.nnet.sigmoid(hidden_lin)
 	predict = T.nnet.softmax(T.dot(hidden,W_hidden_predict) + b_predict)
 	
-	cost = -T.mean(T.log(predict[T.arange(Y.shape[0]),Y])) # + 1e-4 * sum(T.sum(p**2) for p in params)
+	cost = -T.mean(T.log(predict[T.arange(Y.shape[0]),Y])) #+ 0.01*adjacency_constraint(hidden_lin)# + 1e-4 * sum(T.sum(p**2) for p in params)
 	accuracy = T.mean(T.eq(T.argmax(predict,axis=1),Y))
 	grad = T.grad(cost,params)
 	
@@ -39,7 +45,13 @@ def build_model(hidden_size,predict_only=False):
 			outputs = predict[:,0]
 		)
 
-	return train,predict,params
+	i = T.iscalar('i')
+	hidden_p = theano.function(
+			inputs = [X,i],
+			outputs = hidden[:,i]
+		)
+
+	return train,predict,hidden_p,params
 
 def create_normal_data(line_count,point_count):
 	points = []
@@ -66,7 +78,7 @@ def create_data(line_count,point_count):
 	return points, label
 
 
-def plot(points,label,N):
+def plot(points,label,N,histogram=True):
 	fig = plt.figure(figsize=(6,8))
 	bounds = [-2.5,2.5]
 	left_right = np.array(bounds)
@@ -79,15 +91,22 @@ def plot(points,label,N):
 
 #	ax = plt.axes(xlim=(left_right[0],left_right[1]), ylim=(-2.5, 2.5))
 #	ax = plt.subplot(121)
-	ax1 = plt.subplot2grid((3, 2), (0, 0),rowspan=2,colspan=2)
-	ax2 = plt.subplot2grid((3, 2), (2, 0),colspan=2)
+	if histogram:
+		ax1 = plt.subplot2grid((3, 2), (0, 0),rowspan=2,colspan=2)
+		ax2 = plt.subplot2grid((3, 2), (2, 0),colspan=2)
+	else:
+		ax1 = plt.subplot(111)
+		ax2 = None
 
 
 	pos = np.arange(len(labels))
 	width = 5.0/len(labels)
-	rects = ax2.bar(pos,np.zeros(len(labels)),width)
-	ax2.set_xticks(pos + (width / 2))
-	ax2.set_xticklabels(labels,rotation='vertical')
+	if histogram:
+		rects = ax2.bar(pos,np.zeros(len(labels)),width)
+		ax2.set_xticks(pos + (width / 2))
+		ax2.set_xticklabels(labels,rotation='vertical')
+	else:
+		rects = None
 #	for i,c in zip(ax2.get_xticklabels(),lbl_colors): i.set_color(c)
 
 	
@@ -114,9 +133,10 @@ def plot(points,label,N):
 
 if __name__ == "__main__":
 	line_count = 4
+	grid_size  = 3
 	instances  = 1000
-	points, label = create_normal_data(line_count/2 + 1,instances)
-	train,predict,params = build_model(line_count)
+	points, label = create_normal_data(grid_size,instances)
+	train,predict,hidden_p,params = build_model(line_count)
 	fig,ax,ax_hist,left_right,labels,lbl_colors,rects,ctr_pts,im,Z = plot(points,label,line_count)
 	lines = [ax.plot([], [], lw=2)[0] for _ in xrange(line_count)]
 	acc_text = ax.text(0.02, 1.01, '', transform=ax.transAxes)
@@ -129,12 +149,12 @@ if __name__ == "__main__":
 			print acc
 			yield acc,coeffs,bias,hidden,ctr_z
 			acc,coeffs,bias,hidden = train(points,label)
-			ctr_z = predict(np.dstack(ctr_pts).reshape(-1, 2))
+			ctr_z,_ = predict(np.dstack(ctr_pts).reshape(-1, 2))
 		for _ in xrange(100):
 			print acc
 			yield acc,coeffs,bias,hidden,ctr_z
 			acc,coeffs,bias,hidden = train(points,label)
-			ctr_z = predict(np.dstack(ctr_pts).reshape(-1, 2))
+			ctr_z,_ = predict(np.dstack(ctr_pts).reshape(-1, 2))
 
 	it = data_gen()
 	def animate(data):
