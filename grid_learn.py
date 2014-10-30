@@ -9,12 +9,6 @@ from matplotlib import animation
 from itertools import product
 import matplotlib.cm as cm
 import seaborn as sns
-
-def adjacency_constraint(lin_activations):
-	size = lin_activations.shape[1]
-	constraint = T.eye(size)[:,1:] - T.eye(size+1)[1:,1:-1]
-	return T.mean(T.sum(abs(T.dot(lin_activations,constraint)),axis=1)) + T.mean(abs(lin_activations[:,0]-lin_activations[:,-1]))
-
 def build_model(hidden_size,predict_only=False):
 	X = T.matrix('X')
 	Y = T.ivector('Y')
@@ -29,7 +23,7 @@ def build_model(hidden_size,predict_only=False):
 	hidden = T.nnet.sigmoid(hidden_lin)
 	predict = T.nnet.softmax(T.dot(hidden,W_hidden_predict) + b_predict)
 	
-	cost = -T.mean(T.log(predict[T.arange(Y.shape[0]),Y])) #+ 0.01*adjacency_constraint(hidden_lin)# + 1e-4 * sum(T.sum(p**2) for p in params)
+	cost = -T.mean(T.log(predict[T.arange(Y.shape[0]),Y])) + 1e-3*adjacency_constraint(hidden_lin)# + 1e-4 * sum(T.sum(p**2) for p in params)
 	accuracy = T.mean(T.eq(T.argmax(predict,axis=1),Y))
 	grad = T.grad(cost,params)
 	
