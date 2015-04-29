@@ -5,3 +5,6 @@
 *.pyc
 *.mp4
 *.png
+.*
+plots
+*.pkl
